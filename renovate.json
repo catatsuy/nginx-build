@@ -7,9 +7,11 @@
       "fileMatch": [
         "builder/const.go"
       ],
+      "extractVersionTemplate": "^v(?<version>.*)$",
       "matchStrings": [
-        "datasource=(?<datasource>.*?) depName=(?<depName>.*?)( versioning=(?<versioning>.*?))?\n.* \"v(?<currentValue>[0-9.]*)"
-      ]
+        "datasource=(?<datasource>.*?) depName=(?<depName>.*?)( versioning=(?<versioning>.*?))?\n.* \"(?<currentValue>[0-9.]*)\""
+      ],
+      "versioningTemplate": "{{#if versioning}}{{versioning}}{{else}}semver{{/if}}"
     }
   ],
   "postUpdateOptions": [
