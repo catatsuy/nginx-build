@@ -23,7 +23,7 @@ const (
 // libressl
 const (
 	// datasource=github-tags depName=libressl/portable
-	LibreSSLVersion           = "3.5.3"
+	LibreSSLVersion           = "3.8.2"
 	LibreSSLDownloadURLPrefix = "https://ftp.openbsd.org/pub/OpenBSD/LibreSSL"
 )
 
