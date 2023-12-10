@@ -1,4 +1,5 @@
 {
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:base"
   ],
@@ -12,6 +13,28 @@
         "datasource=(?<datasource>.*?) depName=(?<depName>.*?)( versioning=(?<versioning>.*?))?\n.* \"(?<currentValue>[0-9.]*)\""
       ],
       "versioningTemplate": "{{#if versioning}}{{versioning}}{{else}}semver{{/if}}"
+    },
+    {
+      "fileMatch": [
+        "builder/const.go"
+      ],
+      "extractVersionTemplate": "^pcre2-(?<version>.*)$",
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "PCRE2Project/pcre2",
+      "matchStrings": [
+        "PcreVersion\\s+=\\s\"(?<currentValue>[0-9.]*)\""
+      ]
+    },
+    {
+      "fileMatch": [
+        "builder/const.go"
+      ],
+      "extractVersionTemplate": "^openssl-(?<version>.*)$",
+      "datasourceTemplate": "github-tags",
+      "depNameTemplate": "openssl/openssl",
+      "matchStrings": [
+        "OpenSSLVersion\\s+=\\s\"(?<currentValue>[0-9.]*)\""
+      ]
     }
   ],
   "postUpdateOptions": [
