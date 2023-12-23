@@ -34,7 +34,6 @@ const (
 
 // openResty
 const (
-	// datasource=github-releases depName=openresty/openresty versioning=^v(?<version>[0-9]*.[0-9]*.[0-9]*.[0-9]*)$
 	OpenRestyVersion           = "1.21.4.1"
 	OpenRestyDownloadURLPrefix = "https://openresty.org/download"
 )
