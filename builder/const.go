@@ -8,7 +8,7 @@ const (
 
 // pcre
 const (
-	PcreVersion           = "10.42"
+	PcreVersion           = "10.44"
 	PcreDownloadURLPrefix = "https://github.com/PhilipHazel/pcre2/releases/download"
 )
 
