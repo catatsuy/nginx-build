@@ -10,28 +10,35 @@ import (
 	"github.com/cubicdaiya/nginx-build/util"
 )
 
-func DownloadAndExtractParallel(m Module3rd) {
+func DownloadAndExtractParallel(m Module3rd) error {
 	if util.FileExists(m.Name) {
-		log.Printf("%s already exists.", m.Name)
-		return
+		log.Printf("Module %s already exists in %s. Skipping download.", m.Name, m.Name)
+		return nil
 	}
 
 	if m.Form != "local" {
 		if len(m.Rev) > 0 {
-			log.Printf("Download %s-%s.....", m.Name, m.Rev)
+			log.Printf("Downloading module %s-%s from %s.....", m.Name, m.Rev, m.Url)
 		} else {
-			log.Printf("Download %s.....", m.Name)
+			log.Printf("Downloading module %s from %s.....", m.Name, m.Url)
 		}
 
-		logName := fmt.Sprintf("%s.log", m.Name)
+		logName := fmt.Sprintf("%s.log", m.Name) // Log for the download process itself
 
-		err := download(m, logName)
+		err := download(m, logName) // download is from the same package
 		if err != nil {
-			util.PrintFatalMsg(err, logName)
+			return fmt.Errorf("failed to download module %s from %s: %w", m.Name, m.Url, err)
 		}
-	} else if !util.FileExists(m.Url) {
-		log.Fatalf("no such directory:%s", m.Url)
+		log.Printf("Successfully downloaded module %s.", m.Name)
+	} else {
+		// This is for m.Form == "local"
+		if !util.FileExists(m.Url) {
+			// m.Url is the local path here. m.Name is the directory name it will have in the build context.
+			return fmt.Errorf("local module path %s (for module %s) not found", m.Url, m.Name)
+		}
+		log.Printf("Using local module %s from %s.", m.Name, m.Url)
 	}
+	return nil
 }
 
 func download(m Module3rd, logName string) error {

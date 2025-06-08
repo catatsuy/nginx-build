@@ -8,9 +8,12 @@ import (
 )
 
 type Options struct {
-	Values  map[string]OptionValue
-	Bools   map[string]OptionBool
-	Numbers map[string]OptionNumber
+	Values              map[string]OptionValue
+	Bools               map[string]OptionBool
+	Numbers             map[string]OptionNumber
+	Patches             StringFlag // To hold multiple patch paths
+	AddModules          StringFlag // To hold multiple add-module paths
+	AddDynamicModules   StringFlag // To hold multiple add-dynamic-module paths
 }
 
 type OptionValue struct {
@@ -123,10 +126,7 @@ func makeNginxBuildOptions() Options {
 		Desc:    "freenginx version",
 		Default: builder.FreenginxVersion,
 	}
-	argsString["patch"] = OptionValue{
-		Desc:    "patch path for applying to nginx",
-		Default: "",
-	}
+	// The "patch" option is now handled by the Patches field in Options struct
 	argsString["patch-opt"] = OptionValue{
 		Desc:    "option for patch",
 		Default: "",
