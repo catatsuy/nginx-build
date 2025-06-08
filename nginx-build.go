@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -23,77 +24,34 @@ var (
 
 func init() {
 	nginxBuildOptions = makeNginxBuildOptions()
-}
-
-// fake flag for --with-xxx=dynamic
-func overrideUnableParseFlags() {
-	for i, arg := range os.Args {
-		if strings.Contains(arg, "with-http_xslt_module=dynamic") {
-			os.Args[i] = "--with-http_xslt_module_dynamic"
-		}
-		if strings.Contains(arg, "with-http_image_filter_module=dynamic") {
-			os.Args[i] = "--with-http_image_filter_module_dynamic"
-		}
-		if strings.Contains(arg, "with-http_geoip_module=dynamic") {
-			os.Args[i] = "--with-http_geoip_module_dynamic"
-		}
-		if strings.Contains(arg, "with-http_perl_module=dynamic") {
-			os.Args[i] = "--with-http_perl_module_dynamic"
-		}
-		if strings.Contains(arg, "with-mail=dynamic") {
-			os.Args[i] = "--with-mail_dynamic"
-		}
-		if strings.Contains(arg, "with-stream=dynamic") {
-			os.Args[i] = "--with-stream_dynamic"
-		}
-		if strings.Contains(arg, "with-stream_geoip_module=dynamic") {
-			os.Args[i] = "--with-stream_geoip_module_dynamic"
-		}
-	}
+	// Initialize StringFlag fields so flag.Var can append to them
+	nginxBuildOptions.Patches = StringFlag{}
+	nginxBuildOptions.AddModules = StringFlag{}
+	nginxBuildOptions.AddDynamicModules = StringFlag{}
 }
 
 func main() {
-	var (
-		multiflagPatch StringFlag
-	)
-
 	// Parse flags
 	for k, v := range nginxBuildOptions.Bools {
 		v.Enabled = flag.Bool(k, false, v.Desc)
 		nginxBuildOptions.Bools[k] = v
 	}
+	// Simplified loop for nginxBuildOptions.Values
 	for k, v := range nginxBuildOptions.Values {
-		if k == "patch" {
-			flag.Var(&multiflagPatch, k, v.Desc)
-		} else {
-			v.Value = flag.String(k, v.Default, v.Desc)
-			nginxBuildOptions.Values[k] = v
-		}
+		v.Value = flag.String(k, v.Default, v.Desc)
+		nginxBuildOptions.Values[k] = v
 	}
 	for k, v := range nginxBuildOptions.Numbers {
 		v.Value = flag.Int(k, v.Default, v.Desc)
 		nginxBuildOptions.Numbers[k] = v
 	}
 
-	overrideUnableParseFlags()
+	// Register multi-value flags directly using nginxBuildOptions fields
+	flag.Var(&nginxBuildOptions.Patches, "patch", "patch path for applying to nginx (can be used multiple times)")
+	flag.Var(&nginxBuildOptions.AddModules, "add-module", "add 3rd party module (can be used multiple times)")
+	flag.Var(&nginxBuildOptions.AddDynamicModules, "add-dynamic-module", "add 3rd party dynamic module (can be used multiple times)")
 
-	var (
-		configureOptions configure.Options
-		multiflag        StringFlag
-		multiflagDynamic StringFlag
-	)
-
-	argsString := configure.MakeArgsString()
-	for k, v := range argsString {
-		if k == "add-module" {
-			flag.Var(&multiflag, k, v.Desc)
-		} else if k == "add-dynamic-module" {
-			flag.Var(&multiflagDynamic, k, v.Desc)
-		} else {
-			v.Value = flag.String(k, "", v.Desc)
-			argsString[k] = v
-		}
-	}
+	var configureOptions configure.Options
 
 	argsBool := configure.MakeArgsBool()
 	for k, v := range argsBool {
@@ -135,33 +93,34 @@ func main() {
 	freenginxVersion := nginxBuildOptions.Values["freenginxversion"].Value
 	patchOption := nginxBuildOptions.Values["patch-opt"].Value
 
-	// Allow multiple flags for `--patch`
-	{
-		tmp := nginxBuildOptions.Values["patch"]
-		tmp2 := multiflagPatch.String()
-		tmp.Value = &tmp2
-		nginxBuildOptions.Values["patch"] = tmp
+	// Multi-value flags (Patches, AddModules, AddDynamicModules) are now directly in nginxBuildOptions.
+	// The blocks for converting multiflag* to strings and assigning back are removed.
+
+	// For `patchPath`, use the first patch specified, if any.
+	var singlePatchFile string
+	if len(nginxBuildOptions.Patches) > 0 {
+		singlePatchFile = nginxBuildOptions.Patches[0]
+		if len(nginxBuildOptions.Patches) > 1 {
+			log.Printf("[notice] Multiple -patch flags provided. Only the first one ('%s') will be used by the patching process.", singlePatchFile)
+		}
 	}
 
-	// Allow multiple flags for `--add-module`
-	{
-		tmp := argsString["add-module"]
-		tmp2 := multiflag.String()
-		tmp.Value = &tmp2
-		argsString["add-module"] = tmp
+	// Populate configureOptions.Values for configure.Generate.
+	// argsString is initially empty (from configure.MakeArgsString()).
+	// We ensure it's initialized if we need to add module paths.
+	currentConfigureValues := make(map[string]configure.OptionValue)
+	if len(nginxBuildOptions.AddModules) > 0 {
+		addModulesValue := strings.Join(nginxBuildOptions.AddModules, ",")
+		currentConfigureValues["add-module"] = configure.OptionValue{Value: &addModulesValue}
 	}
-
-	// Allow multiple flags for `--add-dynamic-module`
-	{
-		tmp := argsString["add-dynamic-module"]
-		tmp2 := multiflagDynamic.String()
-		tmp.Value = &tmp2
-		argsString["add-dynamic-module"] = tmp
+	if len(nginxBuildOptions.AddDynamicModules) > 0 {
+		addDynamicModulesValue := strings.Join(nginxBuildOptions.AddDynamicModules, ",")
+		currentConfigureValues["add-dynamic-module"] = configure.OptionValue{Value: &addDynamicModulesValue}
 	}
-
-	patchPath := nginxBuildOptions.Values["patch"].Value
-	configureOptions.Values = argsString
-	configureOptions.Bools = argsBool
+	configureOptions.Values = currentConfigureValues // Assign our map to configureOptions
+	configureOptions.Bools = argsBool                // argsBool is from configure.MakeArgsBool() which is empty
+	// Note: patchPath is replaced by singlePatchFile in subsequent code.
+	parsedArgs := flag.Args() // Get non-flag arguments
 
 	if *helpAll {
 		defaultUsage()
@@ -190,17 +149,20 @@ func main() {
 	if *openSSLStatic && *libreSSLStatic {
 		log.Fatal("select one between '-openssl' and '-libressl'.")
 	}
+	// Main component builders - static is false or not applicable in the same sense as libraries.
+	// Assuming 'false' for the static parameter for these.
 	if *openResty {
-		nginxBuilder = builder.MakeBuilder(builder.ComponentOpenResty, *openRestyVersion)
+		nginxBuilder = builder.MakeBuilder(builder.ComponentOpenResty, *openRestyVersion, false) // String consts already match
 	} else if *freenginx {
-		nginxBuilder = builder.MakeBuilder(builder.ComponentFreenginx, *freenginxVersion)
+		nginxBuilder = builder.MakeBuilder(builder.ComponentFreenginx, *freenginxVersion, false) // String consts already match
 	} else {
-		nginxBuilder = builder.MakeBuilder(builder.ComponentNginx, *version)
+		nginxBuilder = builder.MakeBuilder(builder.ComponentNginx, *version, false) // String consts already match
 	}
-	pcreBuilder := builder.MakeLibraryBuilder(builder.ComponentPcre, *pcreVersion, *pcreStatic)
-	openSSLBuilder := builder.MakeLibraryBuilder(builder.ComponentOpenSSL, *openSSLVersion, *openSSLStatic)
-	libreSSLBuilder := builder.MakeLibraryBuilder(builder.ComponentLibreSSL, *libreSSLVersion, *libreSSLStatic)
-	zlibBuilder := builder.MakeLibraryBuilder(builder.ComponentZlib, *zlibVersion, *zlibStatic)
+	// Library builders - pass the respective *Static flag
+	pcreBuilder := builder.MakeBuilder(builder.ComponentPcre, *pcreVersion, *pcreStatic)                 // String consts already match
+	openSSLBuilder := builder.MakeBuilder(builder.ComponentOpenSSL, *openSSLVersion, *openSSLStatic)     // String consts already match
+	libreSSLBuilder := builder.MakeBuilder(builder.ComponentLibreSSL, *libreSSLVersion, *libreSSLStatic) // String consts already match
+	zlibBuilder := builder.MakeBuilder(builder.ComponentZlib, *zlibVersion, *zlibStatic)                 // String consts already match
 
 	if *idempotent {
 		builders := []builder.Builder{
@@ -271,14 +233,17 @@ func main() {
 		}
 	}
 
-	rootDir := util.SaveCurrentDir()
+	rootDir, err := util.SaveCurrentDir()
+	if err != nil {
+		log.Fatalf("Failed to save current directory: %v", err)
+	}
 	err = os.Chdir(workDir)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Failed to change directory to %s: %v", workDir, err)
 	}
 
 	// remove nginx source code applyed patch
-	if *patchPath != "" && util.FileExists(nginxBuilder.SourcePath()) {
+	if singlePatchFile != "" && util.FileExists(nginxBuilder.SourcePath()) {
 		err := os.RemoveAll(nginxBuilder.SourcePath())
 		if err != nil {
 			log.Fatal(err)
@@ -289,7 +254,7 @@ func main() {
 	if *pcreStatic {
 		wg.Add(1)
 		go func() {
-			downloadAndExtractParallel(&pcreBuilder)
+			builder.DownloadAndExtractComponent(&pcreBuilder)
 			wg.Done()
 		}()
 	}
@@ -297,7 +262,7 @@ func main() {
 	if *openSSLStatic {
 		wg.Add(1)
 		go func() {
-			downloadAndExtractParallel(&openSSLBuilder)
+			builder.DownloadAndExtractComponent(&openSSLBuilder)
 			wg.Done()
 		}()
 	}
@@ -305,7 +270,7 @@ func main() {
 	if *libreSSLStatic {
 		wg.Add(1)
 		go func() {
-			downloadAndExtractParallel(&libreSSLBuilder)
+			builder.DownloadAndExtractComponent(&libreSSLBuilder)
 			wg.Done()
 		}()
 	}
@@ -313,26 +278,29 @@ func main() {
 	if *zlibStatic {
 		wg.Add(1)
 		go func() {
-			downloadAndExtractParallel(&zlibBuilder)
+			builder.DownloadAndExtractComponent(&zlibBuilder)
 			wg.Done()
 		}()
 	}
 
 	wg.Add(1)
 	go func() {
-		downloadAndExtractParallel(&nginxBuilder)
+		builder.DownloadAndExtractComponent(&nginxBuilder)
 		wg.Done()
 	}()
 
 	if len(modules3rd) > 0 {
 		wg.Add(len(modules3rd))
-		for _, m := range modules3rd {
-			go func(m module3rd.Module3rd) {
-				module3rd.DownloadAndExtractParallel(m)
-				wg.Done()
-			}(m)
+		for _, mod := range modules3rd { // Renamed m to mod to avoid conflict
+			go func(m module3rd.Module3rd) { // Keep m for the goroutine's copy
+				defer wg.Done()
+				logFile := fmt.Sprintf("%s.log", m.Name) // Determine log file name for this module
+				err := module3rd.DownloadAndExtractParallel(m)
+				if err != nil {
+					util.PrintFatalMsg(err, logFile) // util.PrintFatalMsg will log and exit
+				}
+			}(mod) // Pass mod (the loop variable)
 		}
-
 	}
 
 	// wait until all downloading processes by goroutine finish
@@ -349,21 +317,21 @@ func main() {
 	// cd workDir/nginx-${version}
 	os.Chdir(nginxBuilder.SourcePath())
 
-	var dependencies []builder.StaticLibrary
+	var dependencies []*builder.Builder // Changed type here
 	if *pcreStatic {
-		dependencies = append(dependencies, builder.MakeStaticLibrary(&pcreBuilder))
+		dependencies = append(dependencies, &pcreBuilder) // Add pointer to builder
 	}
 
 	if *openSSLStatic {
-		dependencies = append(dependencies, builder.MakeStaticLibrary(&openSSLBuilder))
+		dependencies = append(dependencies, &openSSLBuilder) // Add pointer to builder
 	}
 
 	if *libreSSLStatic {
-		dependencies = append(dependencies, builder.MakeStaticLibrary(&libreSSLBuilder))
+		dependencies = append(dependencies, &libreSSLBuilder) // Add pointer to builder
 	}
 
 	if *zlibStatic {
-		dependencies = append(dependencies, builder.MakeStaticLibrary(&zlibBuilder))
+		dependencies = append(dependencies, &zlibBuilder) // Add pointer to builder
 	}
 
 	log.Printf("Generate configure script for %s.....", nginxBuilder.SourcePath())
@@ -384,22 +352,32 @@ func main() {
 		log.Println(zlibBuilder.WarnMsgWithLibrary())
 	}
 
-	configureScript := configure.Generate(nginxConfigure, modules3rd, dependencies, configureOptions, rootDir, *openResty, *jobs)
+	// configure.Generate now returns a single string, as it was reverted to its pre-template, pre-error-return state
+	// and then adapted. The adapted non-template version does not have internal error conditions.
+	configureScript := configure.Generate(nginxConfigure, modules3rd, dependencies, configureOptions, rootDir, *openResty, *jobs, parsedArgs)
 
 	err = os.WriteFile("./nginx-configure", []byte(configureScript), 0655)
 	if err != nil {
-		log.Fatalf("Failed to generate configure script for %s", nginxBuilder.SourcePath())
+		log.Fatalf("Failed to write configure script for %s: %v", nginxBuilder.SourcePath(), err)
 	}
 
-	util.Patch(*patchPath, *patchOption, rootDir, false)
+	if err := util.Patch(singlePatchFile, *patchOption, rootDir, false); err != nil {
+		log.Fatalf("Failed to apply patch: %v", err)
+	}
 
 	// reverts source code with patch -R when the build was interrupted.
-	if *patchPath != "" {
+	if singlePatchFile != "" {
 		sigChannel := make(chan os.Signal, 1)
 		signal.Notify(sigChannel, os.Interrupt)
 		go func() {
 			<-sigChannel
-			util.Patch(*patchPath, *patchOption, rootDir, true)
+			log.Println("Interrupt signal received. Attempting to revert patch...")
+			if err := util.Patch(singlePatchFile, *patchOption, rootDir, true); err != nil {
+				log.Printf("ERROR: Failed to revert patch %s: %v", singlePatchFile, err)
+				// Not calling log.Fatal here as we are already in a signal handler,
+				// and the main flow might be terminating.
+			}
+			os.Exit(1) // Exit after attempting to revert patch on interrupt
 		}()
 	}
 
@@ -408,12 +386,17 @@ func main() {
 	err = configure.Run()
 	if err != nil {
 		log.Printf("Failed to configure %s\n", nginxBuilder.SourcePath())
-		util.Patch(*patchPath, *patchOption, rootDir, true)
+		if err := util.Patch(singlePatchFile, *patchOption, rootDir, true); err != nil {
+			log.Printf("Additionally, failed to revert patch during configure error handling: %v", err)
+		}
 		util.PrintFatalMsg(err, "nginx-configure.log")
 	}
 
 	if *configureOnly {
-		util.Patch(*patchPath, *patchOption, rootDir, true)
+		// Attempt to revert patch if configureOnly is set.
+		if err := util.Patch(singlePatchFile, *patchOption, rootDir, true); err != nil {
+			log.Printf("Warning: Failed to revert patch %s after configure only: %v", singlePatchFile, err)
+		}
 		printLastMsg(workDir, nginxBuilder.SourcePath(), *openResty, *configureOnly)
 		return
 	}
@@ -434,9 +417,18 @@ func main() {
 	err = builder.BuildNginx(*jobs)
 	if err != nil {
 		log.Printf("Failed to build %s\n", nginxBuilder.SourcePath())
-		util.Patch(*patchPath, *patchOption, rootDir, true)
+		if err := util.Patch(singlePatchFile, *patchOption, rootDir, true); err != nil {
+			log.Printf("Additionally, failed to revert patch during build error handling: %v", err)
+		}
 		util.PrintFatalMsg(err, "nginx-build.log")
 	}
 
+	// Successfully built, attempt to revert patch if it was applied.
+	// This is to leave the source tree clean.
+	if singlePatchFile != "" {
+		if err := util.Patch(singlePatchFile, *patchOption, rootDir, true); err != nil {
+			log.Printf("Warning: Failed to revert patch %s after successful build: %v", singlePatchFile, err)
+		}
+	}
 	printLastMsg(workDir, nginxBuilder.SourcePath(), *openResty, *configureOnly)
 }

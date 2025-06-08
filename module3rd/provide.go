@@ -2,8 +2,10 @@ package module3rd
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/cubicdaiya/nginx-build/command"
@@ -12,27 +14,55 @@ import (
 
 func Provide(m *Module3rd) error {
 	if len(m.Rev) > 0 {
-		dir := util.SaveCurrentDir()
-		os.Chdir(m.Name)
-		if err := switchRev(m.Form, m.Rev); err != nil {
-			return fmt.Errorf("%s (%s checkout %s): %s", m.Name, m.Form, m.Rev, err.Error())
+		originalDir, err := util.SaveCurrentDir()
+		if err != nil {
+			return fmt.Errorf("failed to save current directory for module %s: %w", m.Name, err)
 		}
-		os.Chdir(dir)
+
+		targetDir := m.Name
+		if err := os.Chdir(targetDir); err != nil {
+			return fmt.Errorf("failed to change directory to %s for module %s: %w", targetDir, m.Name, err)
+		}
+
+		if err := switchRev(m.Form, m.Rev); err != nil {
+			// Attempt to change back to original directory before returning error
+			if errChdirBack := os.Chdir(originalDir); errChdirBack != nil {
+				log.Printf("Warning: failed to change directory back to %s: %v", originalDir, errChdirBack)
+			}
+			return fmt.Errorf("failed to switch revision for module %s (form: %s, rev: %s): %w", m.Name, m.Form, m.Rev, err)
+		}
+
+		if err := os.Chdir(originalDir); err != nil {
+			return fmt.Errorf("failed to change directory back to %s for module %s: %w", originalDir, m.Name, err)
+		}
 	}
 
 	if len(m.Shprov) > 0 {
-		dir := util.SaveCurrentDir()
-		if len(m.ShprovDir) > 0 {
-			os.Chdir(m.Name + "/" + m.ShprovDir)
-		} else {
-			os.Chdir(m.Name)
+		originalDir, err := util.SaveCurrentDir()
+		if err != nil {
+			return fmt.Errorf("failed to save current directory for module %s shprov: %w", m.Name, err)
 		}
-		if err := provideShell(m.Shprov); err != nil {
-			return fmt.Errorf("%s's shprov(%s): %s", m.Name, m.Shprov, err.Error())
-		}
-		os.Chdir(dir)
-	}
 
+		targetDir := m.Name
+		if len(m.ShprovDir) > 0 {
+			targetDir = filepath.Join(m.Name, m.ShprovDir)
+		}
+		if err := os.Chdir(targetDir); err != nil {
+			return fmt.Errorf("failed to change directory to %s for module %s shprov: %w", targetDir, m.Name, err)
+		}
+
+		if err := provideShell(m.Shprov); err != nil {
+			// Attempt to change back to original directory before returning error
+			if errChdirBack := os.Chdir(originalDir); errChdirBack != nil {
+				log.Printf("Warning: failed to change directory back to %s: %v", originalDir, errChdirBack)
+			}
+			return fmt.Errorf("failed to execute shprov for module %s (shprov: %s): %w", m.Name, m.Shprov, err)
+		}
+
+		if err := os.Chdir(originalDir); err != nil {
+			return fmt.Errorf("failed to change directory back to %s for module %s shprov: %w", originalDir, m.Name, err)
+		}
+	}
 	return nil
 }
 

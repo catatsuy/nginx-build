@@ -14,7 +14,7 @@ func Load(path string) ([]Module3rd, error) {
 			return modules, err
 		}
 		if err := json.NewDecoder(f).Decode(&modules); err != nil {
-			return modules, fmt.Errorf("modulesConfPath(%s) is invalid JSON.", path)
+			return modules, fmt.Errorf("modulesConfPath(%s) is invalid JSON: %w", path, err)
 		}
 		for i, _ := range modules {
 			if modules[i].Form == "" {

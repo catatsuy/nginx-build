@@ -42,14 +42,16 @@ const (
 	FreenginxDownloadURLPrefix = "https://freenginx.org/download"
 )
 
+// ComponentType defines the type of component.
+type ComponentType string
+
 // component enumerations
 const (
-	ComponentNginx = iota
-	ComponentOpenResty
-	ComponentFreenginx
-	ComponentPcre
-	ComponentOpenSSL
-	ComponentLibreSSL
-	ComponentZlib
-	ComponentMax
+	ComponentNginx     ComponentType = "nginx"
+	ComponentOpenResty ComponentType = "openresty"
+	ComponentFreenginx ComponentType = "freenginx"
+	ComponentPcre      ComponentType = "pcre"
+	ComponentOpenSSL   ComponentType = "openssl"
+	ComponentLibreSSL  ComponentType = "libressl"
+	ComponentZlib      ComponentType = "zlib"
 )

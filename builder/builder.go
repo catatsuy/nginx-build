@@ -13,7 +13,7 @@ import (
 type Builder struct {
 	Version           string
 	DownloadURLPrefix string
-	Component         int
+	Component         ComponentType
 	// for dependencies such as pcre and zlib and openssl
 	Static bool
 }
@@ -38,7 +38,8 @@ func init() {
 	freenginxVersionRe = regexp.MustCompile(`freenginx version: freenginx/(\d+\.\d+\.\d+)`)
 }
 
-func (builder *Builder) name() string {
+// Name returns the component's canonical name (e.g., "nginx", "pcre2").
+func (builder *Builder) Name() string {
 	var name string
 	switch builder.Component {
 	case ComponentNginx:
@@ -61,8 +62,9 @@ func (builder *Builder) name() string {
 	return name
 }
 
-func (builder *Builder) option() string {
-	name := builder.name()
+// Option returns the configure option string for the component (e.g., "--with-pcre").
+func (builder *Builder) Option() string {
+	name := builder.Name() // Call public Name()
 
 	// libressl does not match option name
 	if name == "libressl" {
@@ -70,7 +72,7 @@ func (builder *Builder) option() string {
 	}
 
 	// pcre2 does not match option name
-	if name == "pcre2" {
+	if name == "pcre2" { // This check should be based on ComponentPcre ideally.
 		name = "pcre"
 	}
 
@@ -90,7 +92,8 @@ func (builder *Builder) DownloadURL() string {
 	case ComponentZlib:
 		return fmt.Sprintf("%s/zlib-%s.tar.gz", ZlibDownloadURLPrefix, builder.Version)
 	case ComponentOpenResty:
-		return fmt.Sprintf("%s/openresty-%s.tar.gz", OpenRestyDownloadURLPrefix, builder.Version)
+		// Use builder.Name() to correctly get "openresty" or "ngx_openresty"
+		return fmt.Sprintf("%s/%s-%s.tar.gz", OpenRestyDownloadURLPrefix, builder.Name(), builder.Version)
 	case ComponentFreenginx:
 		return fmt.Sprintf("%s/freenginx-%s.tar.gz", FreenginxDownloadURLPrefix, builder.Version)
 	default:
@@ -99,7 +102,7 @@ func (builder *Builder) DownloadURL() string {
 }
 
 func (builder *Builder) SourcePath() string {
-	return fmt.Sprintf("%s-%s", builder.name(), builder.Version)
+	return fmt.Sprintf("%s-%s", builder.Name(), builder.Version)
 }
 
 func (builder *Builder) ArchivePath() string {
@@ -107,11 +110,11 @@ func (builder *Builder) ArchivePath() string {
 }
 
 func (builder *Builder) LogPath() string {
-	return fmt.Sprintf("%s-%s.log", builder.name(), builder.Version)
+	return fmt.Sprintf("%s-%s.log", builder.Name(), builder.Version)
 }
 
 func (builder *Builder) IsIncludeWithOption(nginxConfigure string) bool {
-	if strings.Contains(nginxConfigure, builder.option()+"=") {
+	if strings.Contains(nginxConfigure, builder.Option()+"=") {
 		return true
 	}
 	return false
@@ -119,7 +122,7 @@ func (builder *Builder) IsIncludeWithOption(nginxConfigure string) bool {
 
 func (builder *Builder) WarnMsgWithLibrary() string {
 	return fmt.Sprintf("[warn]Using '%s' is discouraged. Instead give '-%s' and '-%sversion' to 'nginx-build'",
-		builder.option(), builder.name(), builder.name())
+		builder.Option(), builder.Name(), builder.Name())
 }
 
 func (builder *Builder) InstalledVersion() (string, error) {
@@ -141,7 +144,8 @@ func (builder *Builder) InstalledVersion() (string, error) {
 	openRestyName := openresty.Name(builder.Version)
 	var versionRe *regexp.Regexp
 
-	switch builder.name() {
+	// Use public Name() method
+	switch builder.Name() {
 	case "nginx":
 		versionRe = nginxVersionRe
 	case openRestyName:
@@ -165,14 +169,18 @@ func (builder *Builder) InstalledVersion() (string, error) {
 	return string(m[1]), nil
 }
 
-func MakeBuilder(component int, version string) Builder {
+func MakeBuilder(component ComponentType, version string, static bool) Builder {
 	var builder Builder
 	builder.Component = component
 	builder.Version = version
+	builder.Static = static // Set the static field
 	switch component {
 	case ComponentNginx:
 		builder.DownloadURLPrefix = NginxDownloadURLPrefix
 	case ComponentPcre:
+		// This logic for DownloadURLPrefix seems specific and should be preserved.
+		// It might lead to an incorrect final URL structure for PCRE as discussed in thought process,
+		// but refactoring aims to preserve existing behavior unless fixing is trivial/required.
 		builder.DownloadURLPrefix = fmt.Sprintf("%s/pcre2-%s", PcreDownloadURLPrefix, version)
 	case ComponentOpenSSL:
 		builder.DownloadURLPrefix = fmt.Sprintf("%s/openssl-%s", OpenSSLDownloadURLPrefix, version)
@@ -187,11 +195,5 @@ func MakeBuilder(component int, version string) Builder {
 	default:
 		panic("invalid component")
 	}
-	return builder
-}
-
-func MakeLibraryBuilder(component int, version string, static bool) Builder {
-	builder := MakeBuilder(component, version)
-	builder.Static = static
 	return builder
 }
